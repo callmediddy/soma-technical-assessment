@@ -24,7 +24,21 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
   }
   try {
-    const { refreshImage } = await request.json();
+    const body = await request.json();
+    const { refreshImage, dueDate } = body;
+
+    if (dueDate !== undefined) {
+      const updated = await prisma.todo.update({
+        where: { id },
+        data: { dueDate: dueDate ? new Date(dueDate) : null },
+        include: {
+          dependencies: { include: { dependency: true } },
+          dependents: { include: { dependent: true } },
+        },
+      });
+      return NextResponse.json(updated);
+    }
+
     if (!refreshImage) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
     }

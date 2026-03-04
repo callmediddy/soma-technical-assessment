@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { TodoWithMeta, TodoWithRelations } from "../types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 interface Props {
   todo: TodoWithMeta;
@@ -14,6 +15,8 @@ interface Props {
 export default function TodoCard({ todo, allTodos, columns, onRefresh }: Props) {
   const [imgLoading, setImgLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [dueDateOpen, setDueDateOpen] = useState(false);
 
   const now = new Date();
   const parseLocalDate = (iso: string) => {
@@ -35,6 +38,17 @@ export default function TodoCard({ todo, allTodos, columns, onRefresh }: Props) 
       body: JSON.stringify({ refreshImage: true }),
     });
     setReloading(false);
+    onRefresh();
+  };
+
+  const handleDueDateChange = async (date: Date | undefined) => {
+    setDueDateOpen(false);
+    const dueDate = date ? date.toISOString() : null;
+    await fetch(`/api/todos/${todo.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueDate }),
+    });
     onRefresh();
   };
 
@@ -119,27 +133,73 @@ export default function TodoCard({ todo, allTodos, columns, onRefresh }: Props) 
     <div className="space-y-2">
       <div className="flex items-start justify-between gap-2">
         <span className="text-sm font-medium text-white leading-snug">{todo.title}</span>
-        <button onClick={handleDelete} className="flex-shrink-0 text-neutral-700 hover:text-red-500 transition-colors mt-0.5">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <Popover open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <PopoverTrigger asChild>
+            <button className="flex-shrink-0 text-neutral-700 hover:text-red-500 transition-colors mt-0.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-36 p-2 border-neutral-800 bg-neutral-950">
+            <p className="text-xs text-neutral-300 mb-2 font-medium">Confirm delete?</p>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => { setDeleteOpen(false); handleDelete(); }}
+                className="flex-1 text-xs px-2 py-1 rounded-md bg-red-950 text-red-400 border border-red-900 hover:bg-red-900 transition-colors"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setDeleteOpen(false)}
+                className="flex-1 text-xs px-2 py-1 rounded-md bg-neutral-900 text-neutral-400 border border-neutral-800 hover:bg-neutral-800 transition-colors"
+              >
+                No
+              </button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {todo.dueDate && (
-          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium ${
-            isOverdue ? "bg-red-950 text-red-400 border border-red-900" : "bg-neutral-900 text-neutral-400 border border-neutral-800"
-          }`}>
-            {isOverdue && (
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
+        <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+          <PopoverTrigger asChild>
+            <button className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium transition-opacity hover:opacity-80 ${
+              todo.dueDate
+                ? isOverdue
+                  ? "bg-red-950 text-red-400 border border-red-900"
+                  : "bg-neutral-900 text-neutral-400 border border-neutral-800"
+                : "bg-neutral-900 text-neutral-600 border border-neutral-800 border-dashed"
+            }`}>
+              {todo.dueDate && isOverdue && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              )}
+              {todo.dueDate
+                ? `${isOverdue ? "Overdue · " : "Due · "}${parseLocalDate(todo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                : "Set due date"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-0 border-neutral-800 bg-neutral-950">
+            <Calendar
+              mode="single"
+              selected={todo.dueDate ? parseLocalDate(todo.dueDate) : undefined}
+              onSelect={handleDueDateChange}
+              initialFocus
+            />
+            {todo.dueDate && (
+              <div className="border-t border-neutral-800 px-3 py-2">
+                <button
+                  onClick={() => handleDueDateChange(undefined)}
+                  className="text-[11px] text-neutral-500 hover:text-neutral-300 transition-colors"
+                >
+                  Clear due date
+                </button>
+              </div>
             )}
-            {isOverdue ? "Overdue · " : "Due · "}
-            {parseLocalDate(todo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-          </span>
-        )}
+          </PopoverContent>
+        </Popover>
         <span className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-md bg-neutral-900 text-neutral-500 border border-neutral-800">
           Start · {todo.earliestStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
         </span>

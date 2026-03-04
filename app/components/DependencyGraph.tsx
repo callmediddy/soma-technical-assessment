@@ -82,11 +82,8 @@ export default function DependencyGraph({ todos }: Props) {
     })
   );
 
-  const maxCount = Math.max(...Array.from(byDepth.values()).map((ids) => ids.length), 1);
-  const graphHeight = Math.max(maxCount * (nodeHeight + 24) + 40, 180);
-
   return (
-    <div style={{ width: "100%", height: graphHeight, background: "#000" }}>
+    <div style={{ width: "100%", height: "100%", minHeight: 300, background: "#000" }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -97,10 +94,7 @@ export default function DependencyGraph({ todos }: Props) {
         elementsSelectable={false}
       >
         <Background variant={BackgroundVariant.Dots} color="#1a1a1a" gap={20} size={1} />
-        <Controls
-          style={{ background: "#111", border: "1px solid #262626", borderRadius: 8 }}
-          showInteractive={false}
-        />
+        <Controls showInteractive={false} />
       </ReactFlow>
     </div>
   );

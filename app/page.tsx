@@ -11,6 +11,11 @@ const DependencyGraph = dynamic(() => import("./components/DependencyGraph"), {
 
 // ─── Critical-path helpers ────────────────────────────────────────────────────
 
+function parseLocalDate(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function computeEarliestStart(
   todo: TodoWithRelations,
   allMap: Map<number, TodoWithRelations>
@@ -18,7 +23,7 @@ function computeEarliestStart(
   if (todo.dependencies.length === 0) return new Date();
   const depDueDates = todo.dependencies.map((d) => {
     const dep = allMap.get(d.dependencyId);
-    return dep?.dueDate ? new Date(dep.dueDate) : new Date();
+    return dep?.dueDate ? parseLocalDate(dep.dueDate) : new Date();
   });
   return new Date(Math.max(...depDueDates.map((d) => d.getTime())));
 }

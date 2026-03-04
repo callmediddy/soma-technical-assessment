@@ -14,7 +14,12 @@ export default function TodoCard({ todo, allTodos, onRefresh }: Props) {
   const [addingDep, setAddingDep] = useState(false);
 
   const now = new Date();
-  const isOverdue = todo.dueDate ? new Date(todo.dueDate) < now : false;
+  // Parse as local date (YYYY-MM-DD) to avoid UTC-offset shifting the day
+  const parseLocalDate = (iso: string) => {
+    const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
+  const isOverdue = todo.dueDate ? parseLocalDate(todo.dueDate) < now : false;
 
   const handleDelete = async () => {
     await fetch(`/api/todos/${todo.id}`, { method: "DELETE" });
@@ -117,7 +122,7 @@ export default function TodoCard({ todo, allTodos, onRefresh }: Props) {
                   </svg>
                 )}
                 {isOverdue ? "Overdue · " : "Due · "}
-                {new Date(todo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {parseLocalDate(todo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               </span>
             )}
             <span className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-md bg-neutral-900 text-neutral-500 border border-neutral-800">

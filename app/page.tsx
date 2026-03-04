@@ -95,6 +95,16 @@ export default function Home() {
 
   useEffect(() => { fetchTodos(); }, [fetchTodos]);
 
+  // After creation, poll until the background Pexels image fetch resolves
+  const handleCreated = useCallback(async () => {
+    await fetchTodos();
+    let count = 0;
+    const interval = setInterval(async () => {
+      await fetchTodos();
+      if (++count >= 5) clearInterval(interval);
+    }, 1000);
+  }, [fetchTodos]);
+
   const enriched = enrichTodos(todos);
   const filtered = filterTodos(enriched, searchQuery);
   const sorted = sortTodos(filtered, sortKey);
@@ -118,7 +128,7 @@ export default function Home() {
           <p className="text-neutral-500 text-sm mt-1">Track tasks, dependencies, and deadlines.</p>
         </div>
 
-        <TodoForm todos={todos} onCreated={fetchTodos} />
+        <TodoForm todos={todos} onCreated={handleCreated} />
 
         {todos.length === 0 ? (
           <div className="border border-dashed border-neutral-800 rounded-lg py-16 text-center text-neutral-600 text-sm">

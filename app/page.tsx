@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import dynamic from "next/dynamic";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { TodoWithMeta, TodoWithRelations } from "./types";
+import { TodoWithMeta, TodoWithRelations } from "./types"; // TodoWithMeta used by sortTodos
+import { enrichTodos, parseLocalDate } from "./lib/todos";
+import Nav from "./components/Nav";
 import TodoForm from "./components/TodoForm";
 import TodoCard from "./components/TodoCard";
 import {
@@ -12,55 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const DependencyGraph = dynamic(() => import("./components/DependencyGraph"), { ssr: false });
-
-// ─── Critical-path helpers ────────────────────────────────────────────────────
-
-function parseLocalDate(iso: string): Date {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function computeEarliestStart(todo: TodoWithRelations, allMap: Map<number, TodoWithRelations>): Date {
-  if (todo.dependencies.length === 0) return new Date();
-  const dates = todo.dependencies.map((d) => {
-    const dep = allMap.get(d.dependencyId);
-    return dep?.dueDate ? parseLocalDate(dep.dueDate) : new Date();
-  });
-  return new Date(Math.max(...dates.map((d) => d.getTime())));
-}
-
-function computeDepth(id: number, allMap: Map<number, TodoWithRelations>, cache: Map<number, number>): number {
-  if (cache.has(id)) return cache.get(id)!;
-  const todo = allMap.get(id);
-  if (!todo || todo.dependencies.length === 0) { cache.set(id, 0); return 0; }
-  const depth = Math.max(...todo.dependencies.map((d) => computeDepth(d.dependencyId, allMap, cache) + 1));
-  cache.set(id, depth);
-  return depth;
-}
-
-function computeHeight(id: number, allMap: Map<number, TodoWithRelations>, cache: Map<number, number>): number {
-  if (cache.has(id)) return cache.get(id)!;
-  const todo = allMap.get(id);
-  if (!todo || todo.dependents.length === 0) { cache.set(id, 0); return 0; }
-  const height = Math.max(...todo.dependents.map((d) => computeHeight(d.dependentId, allMap, cache) + 1));
-  cache.set(id, height);
-  return height;
-}
-
-function enrichTodos(todos: TodoWithRelations[]): TodoWithMeta[] {
-  const allMap = new Map(todos.map((t) => [t.id, t]));
-  const depthCache = new Map<number, number>();
-  const heightCache = new Map<number, number>();
-  todos.forEach((t) => { computeDepth(t.id, allMap, depthCache); computeHeight(t.id, allMap, heightCache); });
-  const maxDepth = Math.max(0, ...Array.from(depthCache.values()));
-  return todos.map((t) => {
-    const depth = depthCache.get(t.id) ?? 0;
-    const height = heightCache.get(t.id) ?? 0;
-    return { ...t, earliestStart: computeEarliestStart(t, allMap), isCritical: maxDepth > 0 && depth + height === maxDepth };
-  });
-}
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 
@@ -95,7 +47,6 @@ const GRID_COLS = ["grid-cols-1", "grid-cols-2", "grid-cols-3", "grid-cols-4"];
 
 export default function Home() {
   const [todos, setTodos] = useState<TodoWithRelations[]>([]);
-  const [showGraph, setShowGraph] = useState(false);
   const [columns, setColumns] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt_desc");
   const [perPage, setPerPage] = useState(10);
@@ -118,7 +69,6 @@ export default function Home() {
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const safePage = Math.min(page, totalPages);
   const paginated = sorted.slice((safePage - 1) * perPage, safePage * perPage);
-  const hasDeps = todos.some((t) => t.dependencies.length > 0);
 
   const containerW = CONTAINER_WIDTH[columns - 1];
 
@@ -127,17 +77,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-black">
-      <header className="border-b border-neutral-800">
-        <div className={`${containerW} mx-auto px-6 h-14 flex items-center justify-between transition-all duration-300`}>
-          <div className="flex items-center gap-2">
-            <svg width="20" height="20" viewBox="0 0 76 65" fill="white">
-              <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-            </svg>
-            <span className="text-white font-semibold text-sm">Tasks</span>
-          </div>
-          <span className="text-neutral-500 text-xs">{todos.length} item{todos.length !== 1 ? "s" : ""}</span>
-        </div>
-      </header>
+      <Nav itemCount={todos.length} />
 
       <main className={`${containerW} mx-auto px-6 py-10 space-y-6 transition-all duration-300`}>
         <div>
@@ -258,25 +198,6 @@ export default function Home() {
           </>
         )}
 
-        {hasDeps && (
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setShowGraph((v) => !v)}
-              className="w-full px-4 py-3 flex justify-between items-center text-neutral-300 text-sm font-medium hover:bg-neutral-900 transition"
-            >
-              <span>Dependency Graph</span>
-              <svg className={`w-4 h-4 text-neutral-500 transition-transform ${showGraph ? "rotate-180" : ""}`}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {showGraph && (
-              <div className="border-t border-neutral-800">
-                <DependencyGraph todos={enriched} />
-              </div>
-            )}
-          </div>
-        )}
       </main>
     </div>
   );

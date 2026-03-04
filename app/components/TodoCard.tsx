@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import { TodoWithMeta, TodoWithRelations } from "../types";
+import { Check } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface Props {
   todo: TodoWithMeta;
@@ -11,7 +13,6 @@ interface Props {
 export default function TodoCard({ todo, allTodos, onRefresh }: Props) {
   const [imgLoading, setImgLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
-  const [addingDep, setAddingDep] = useState(false);
 
   const now = new Date();
   // Parse as local date (YYYY-MM-DD) to avoid UTC-offset shifting the day
@@ -37,26 +38,46 @@ export default function TodoCard({ todo, allTodos, onRefresh }: Props) {
     onRefresh();
   };
 
-  const handleRemoveDep = async (dependencyId: number) => {
-    await fetch(`/api/todos/${todo.id}/dependencies/${dependencyId}`, { method: "DELETE" });
-    onRefresh();
+  const existingDepIds = new Set(todo.dependencies.map((d) => d.dependencyId));
+  const otherTodos = allTodos.filter((t) => t.id !== todo.id);
+
+  // BFS from candidateId: if we can reach todo.id via dependency edges, adding
+  // candidateId as a dependency of todo.id would create a cycle.
+  const wouldCycle = (candidateId: number): boolean => {
+    const visited = new Set<number>();
+    const queue = [candidateId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current === todo.id) return true;
+      const node = allTodos.find((t) => t.id === current);
+      if (node) {
+        for (const dep of node.dependencies) {
+          if (!visited.has(dep.dependencyId)) {
+            visited.add(dep.dependencyId);
+            queue.push(dep.dependencyId);
+          }
+        }
+      }
+    }
+    return false;
   };
 
-  const handleAddDep = async (depId: number) => {
-    const res = await fetch(`/api/todos/${todo.id}/dependencies`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dependencyId: depId }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error ?? "Failed to add dependency");
+  const handleToggleDep = async (depId: number) => {
+    if (existingDepIds.has(depId)) {
+      await fetch(`/api/todos/${todo.id}/dependencies/${depId}`, { method: "DELETE" });
+    } else {
+      const res = await fetch(`/api/todos/${todo.id}/dependencies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dependencyId: depId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error ?? "Failed to add dependency");
+      }
     }
     onRefresh();
   };
-
-  const existingDepIds = new Set(todo.dependencies.map((d) => d.dependencyId));
-  const available = allTodos.filter((t) => t.id !== todo.id && !existingDepIds.has(t.id));
 
   return (
     <li className="border border-neutral-800 rounded-lg bg-neutral-950 overflow-hidden group">
@@ -136,7 +157,7 @@ export default function TodoCard({ todo, allTodos, onRefresh }: Props) {
           </div>
 
           {/* Dependencies */}
-          {(todo.dependencies.length > 0 || available.length > 0) && (
+          {otherTodos.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               {todo.dependencies.map((d) => (
                 <span
@@ -145,34 +166,56 @@ export default function TodoCard({ todo, allTodos, onRefresh }: Props) {
                 >
                   {d.dependency.title}
                   <button
-                    onClick={() => handleRemoveDep(d.dependencyId)}
+                    onClick={() => handleToggleDep(d.dependencyId)}
                     className="text-neutral-600 hover:text-red-400 transition-colors"
                   >
                     ×
                   </button>
                 </span>
               ))}
-              {available.length > 0 && (
-                addingDep ? (
-                  <select
-                    autoFocus
-                    defaultValue=""
-                    onChange={(e) => { if (e.target.value) handleAddDep(Number(e.target.value)); setAddingDep(false); }}
-                    onBlur={() => setAddingDep(false)}
-                    className="text-[11px] bg-neutral-900 border border-neutral-700 rounded-md px-2 py-0.5 text-neutral-300 focus:outline-none focus:border-neutral-500"
-                  >
-                    <option value="" disabled>Pick a task…</option>
-                    {available.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
-                  </select>
-                ) : (
-                  <button
-                    onClick={() => setAddingDep(true)}
-                    className="text-[11px] text-neutral-600 hover:text-neutral-300 transition-colors"
-                  >
-                    + depends on
-                  </button>
-                )
-              )}
+              <Popover>
+                <PopoverTrigger className="text-[11px] text-neutral-600 hover:text-neutral-300 transition-colors">
+                  + depends on
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-48 p-1 border-neutral-800 bg-neutral-950"
+                >
+                  <div className="overflow-y-auto max-h-[175px]">
+                  {otherTodos.map((t) => {
+                    const checked = existingDepIds.has(t.id);
+                    const cyclic = !checked && wouldCycle(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => !cyclic && handleToggleDep(t.id)}
+                        disabled={cyclic}
+                        title={cyclic ? "Would create a circular dependency" : undefined}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-left ${
+                          cyclic
+                            ? "opacity-40 cursor-not-allowed"
+                            : "hover:bg-neutral-800 cursor-pointer"
+                        }`}
+                      >
+                        <span className={`flex-shrink-0 w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-colors ${
+                          checked
+                            ? "border-neutral-500 bg-neutral-700"
+                            : "border-neutral-700 bg-transparent"
+                        }`}>
+                          {checked && <Check className="w-2.5 h-2.5 text-neutral-200" strokeWidth={3} />}
+                        </span>
+                        <span className={`text-xs truncate transition-colors ${checked ? "text-neutral-200" : "text-neutral-500"}`}>
+                          {t.title}
+                        </span>
+                        {cyclic && (
+                          <span className="ml-auto text-[10px] text-neutral-600 flex-shrink-0">circular</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
         </div>

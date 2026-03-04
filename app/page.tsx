@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { TodoWithMeta, TodoWithRelations } from "./types"; // TodoWithMeta used by sortTodos
 import { enrichTodos, parseLocalDate } from "./lib/todos";
 import Nav from "./components/Nav";
@@ -43,14 +43,45 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 const CONTAINER_WIDTH = ["max-w-2xl", "max-w-4xl", "max-w-5xl", "max-w-6xl"];
 const GRID_COLS = ["grid-cols-1", "grid-cols-2", "grid-cols-3", "grid-cols-4"];
 
+// ─── Search / filter ──────────────────────────────────────────────────────────
+
+const DATE_FILTER_RE = /^([><]=?|=)\s*(.+)$/;
+
+function filterTodos(todos: TodoWithMeta[], query: string): TodoWithMeta[] {
+  const q = query.trim();
+  if (!q) return todos;
+
+  const dateMatch = q.match(DATE_FILTER_RE);
+  if (dateMatch) {
+    const op = dateMatch[1];          // >, <, >=, <=, =
+    const parsed = new Date(dateMatch[2].trim());
+    if (isNaN(parsed.getTime())) return todos; // unparseable — show all
+    const threshold = parsed.getTime();
+    return todos.filter((t) => {
+      if (!t.dueDate) return false;
+      const due = parseLocalDate(t.dueDate).getTime();
+      if (op === ">"  || op === "gt") return due > threshold;
+      if (op === ">=" || op === "gte") return due >= threshold;
+      if (op === "<"  || op === "lt") return due < threshold;
+      if (op === "<=" || op === "lte") return due <= threshold;
+      if (op === "=")  return due === threshold;
+      return true;
+    });
+  }
+
+  const lower = q.toLowerCase();
+  return todos.filter((t) => t.title.toLowerCase().includes(lower));
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
   const [todos, setTodos] = useState<TodoWithRelations[]>([]);
-  const [columns, setColumns] = useState(1);
+  const [columns, setColumns] = useState(4);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt_desc");
   const [perPage, setPerPage] = useState(10);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchTodos = useCallback(async () => {
     try {
@@ -65,7 +96,8 @@ export default function Home() {
   useEffect(() => { fetchTodos(); }, [fetchTodos]);
 
   const enriched = enrichTodos(todos);
-  const sorted = sortTodos(enriched, sortKey);
+  const filtered = filterTodos(enriched, searchQuery);
+  const sorted = sortTodos(filtered, sortKey);
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const safePage = Math.min(page, totalPages);
   const paginated = sorted.slice((safePage - 1) * perPage, safePage * perPage);
@@ -74,6 +106,7 @@ export default function Home() {
 
   const handleSortChange = (val: SortKey) => { setSortKey(val); setPage(1); };
   const handlePerPageChange = (val: string) => { setPerPage(Number(val)); setPage(1); };
+  const handleSearchChange = (val: string) => { setSearchQuery(val); setPage(1); };
 
   return (
     <div className="min-h-screen bg-black">
@@ -119,6 +152,23 @@ export default function Home() {
                 </SelectContent>
               </Select>
 
+              {/* Search */}
+              <div className="relative flex items-center">
+                <Search className="absolute left-2 w-3.5 h-3.5 text-neutral-600 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Search name or >2026-03-10"
+                  className="h-8 w-56 pl-7 pr-7 text-xs rounded-md border border-neutral-800 bg-neutral-950 text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-neutral-600 transition-colors"
+                />
+                {searchQuery && (
+                  <button onClick={() => handleSearchChange("")} className="absolute right-2 text-neutral-600 hover:text-neutral-300 transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
               {/* Spacer */}
               <div className="flex-1" />
 
@@ -141,11 +191,17 @@ export default function Home() {
             </div>
 
             {/* Grid */}
-            <ul className={`grid gap-3 ${GRID_COLS[columns - 1]}`}>
-              {paginated.map((todo) => (
-                <TodoCard key={todo.id} todo={todo} allTodos={todos} columns={columns} onRefresh={fetchTodos} />
-              ))}
-            </ul>
+            {sorted.length === 0 ? (
+              <div className="border border-dashed border-neutral-800 rounded-lg py-12 text-center text-neutral-600 text-sm">
+                No tasks match <span className="text-neutral-400 font-mono">{searchQuery}</span>
+              </div>
+            ) : (
+              <ul className={`grid gap-3 ${GRID_COLS[columns - 1]}`}>
+                {paginated.map((todo) => (
+                  <TodoCard key={todo.id} todo={todo} allTodos={todos} columns={columns} onRefresh={fetchTodos} />
+                ))}
+              </ul>
+            )}
 
             {/* Pagination */}
             {totalPages > 1 && (
